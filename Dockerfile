@@ -32,4 +32,4 @@ ENV PORT=8000
 EXPOSE ${PORT}
 
 # Run the FastAPI server via Uvicorn
-CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["python", "app.py"]
