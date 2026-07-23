@@ -204,34 +204,68 @@ def save_to_csv(data, filepath):
 
 # ─── SCRAPE DATE RANGE ───
 async def scrape_date_range(start_date_str, end_date_str):
-    start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+    print("=" * 60, flush=True)
+    print(f"Started scraping from {start_date_str} to {end_date_str}", flush=True)
+    print("=" * 60, flush=True)
+
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+
     base_path = "data"
     os.makedirs(base_path, exist_ok=True)
+
     total_articles = 0
     current_date = start_date
 
     timeout = aiohttp.ClientTimeout(total=120, connect=60)
     connector = aiohttp.TCPConnector(limit=5, limit_per_host=3)
-    async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout, connector=connector) as session:
+
+    async with aiohttp.ClientSession(
+        headers=HEADERS,
+        timeout=timeout,
+        connector=connector
+    ) as session:
+
         while current_date <= end_date:
-            date_str = current_date.strftime('%Y-%m-%d')
-            print(f"\n Scraping {date_str}...")
+
+            date_str = current_date.strftime("%Y-%m-%d")
+
+            print(f"\nProcessing {date_str}...", flush=True)
+
             try:
                 articles = await parse_archive_page(session, current_date)
+
                 if articles:
+
+                    print(f"Found {len(articles)} archive articles", flush=True)
+
                     detailed_articles = await fetch_article_details(session, articles)
-                    daily_file = f"{base_path}/ET_{date_str.replace('-','_')}.csv"
+
+                    daily_file = f"{base_path}/ET_{date_str.replace('-', '_')}.csv"
+
                     save_to_csv(detailed_articles, daily_file)
+
                     total_articles += len(detailed_articles)
-                    print(f" Saved {len(detailed_articles)} articles for {date_str}")
+
+                    print(
+                        f"Saved {len(detailed_articles)} articles for {date_str}",
+                        flush=True,
+                    )
+
                 else:
-                    print(f" No articles found for {date_str}")
+                    print(f"No articles found for {date_str}", flush=True)
+
                 await asyncio.sleep(DELAY_BETWEEN_REQUESTS)
+
             except Exception as e:
-                print(f" Error processing {date_str}: {e}")
+                print(f"Error processing {date_str}: {e}", flush=True)
+
             current_date += timedelta(days=1)
-    print(f"\n Scraping completed! Total articles: {total_articles}")
+
+    print("=" * 60, flush=True)
+    print(f"Scraping completed. Total articles = {total_articles}", flush=True)
+    print("=" * 60, flush=True)
+
     return total_articles
 
 # ─── FASTAPI ENDPOINTS ───
@@ -240,18 +274,26 @@ def read_root():
     return {"status": "Service is running!"}
 
 @app.post("/scrape")
-async def trigger_scraping(payload: ScrapeRequest, background_tasks: BackgroundTasks):
+async def trigger_scraping(payload: ScrapeRequest):
     try:
-        # Runs scraping in background so API call does not timeout
-        background_tasks.add_task(scrape_date_range, payload.start_date, payload.end_date)
-        return {
-            "message": f"Scraping job started for range {payload.start_date} to {payload.end_date}.",
-            "status": "Processing in background"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port)
+        total = await scrape_date_range(
+            payload.start_date,
+            payload.end_date
+        )
+
+        return {
+            "status": "Completed",
+            "articles_scraped": total,
+            "date_range": {
+                "start_date": payload.start_date,
+                "end_date": payload.end_date
+            }
+        }
+
+    except Exception as e:
+        print(f"Scraping failed: {e}", flush=True)
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
